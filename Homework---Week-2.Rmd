@@ -1,0 +1,112 @@
+---
+title: "Homework - Week 2"
+author: "Caique Machado, Pendro Henrique e Victor Signorini"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Carregando Pacotes
+
+```{r}
+library(data.table)
+library(dplyr)
+library(questionr)
+library(snpReady)
+
+```
+
+# Carregando dados
+
+```{r}
+
+data <- fread("GSE50558_CFD_matrix_GEO.txt")
+
+```
+
+# Selecionando População
+
+Vamos utilizar a população CFD01
+
+```{r}
+Pop_CFD01 <- data %>% 
+  select(starts_with("CFD01")) %>% 
+  select(ends_with("Alleles"))
+
+Pop_CFD01$ID_REF = data[,1];
+
+Pop_CFD01 = Pop_CFD01 %>% select(ID_REF,everything()) # Inserindo coluna com nomes dos marcadores
+
+Pop_CFD01 <- data.frame(Pop_CFD01, row.names = "ID_REF") # Nomeando as linhas com os nomes dos marcadores
+
+Pop_CFD01 <- Pop_CFD01[,-1] # Excluindo coluna com nomes dos marcadores
+
+Pop_CFD01 <- as.data.frame(apply(Pop_CFD01, 2, function(x) {x[x=="--"] <- NA ; x})) # Substituindo -- por NA
+
+head(Pop_CFD01)[,1:5]
+
+
+
+```
+
+# Computando SNPs prevalescentes
+
+```{r}
+AA <- length(which("AA" == Pop_CFD01))
+
+AA
+
+CC <- length(which("CC" == Pop_CFD01))
+
+CC
+
+GG <- length(which("GG" == Pop_CFD01))
+
+GG
+
+TT <- length(which("TT" == Pop_CFD01))
+
+TT
+```
+Há uma prevalescência das bases Adenina e Guanina. Logo, o SNP prevalescente é A/G
+
+# Matriz de relacionamento genômico
+
+Antes de obter a matriz G, é necessária realizar alguns procedimentos de controle dequalidade no conjunto de dados original:
+
+## Leitura e filtragem dos dados 
+```{r}
+head(Pop_CFD01)[,1:5]
+
+transp_Pop_CFD01 <- t(Pop_CFD01) # A transposição é necessária pois é deste modo que a função `raw.data()` do pacote snpReady lê o arquivo de dados (marcadores nas colunas e genótipos nas linhas)
+
+head(transp_Pop_CFD01)[,1:3]
+
+geno.ready <- raw.data(data = as.matrix(transp_Pop_CFD01), frame = "wide", base = TRUE, sweep.sample = 0.5, call.rate = 0.95, maf = 0.10, imput = FALSE)
+
+M <- geno.ready$M.clean
+
+M[1:10,1:5]
+
+```
+O arquivo M trata-se de um novo arquivo obtido após a utilização de alguns parâmetros de controle de qualidade, tais como: "call rate" = 0.95, o que significa que só foram aceitos marcadores com no máximo 5% de missing data (10987 marcadores foram removidos); e MAF = 0.1, ou seja, marcadores com frequência do alelo menos frequente igual a 0.1 foram removidos (39279 marcadores removidos).
+
+## Imputação
+
+```{r}
+geno.ready2 <- raw.data(data = as.matrix(transp_Pop_CFD01), frame = "wide", base = TRUE, sweep.sample = 0.5, call.rate = 0.95, maf = 0.10, imput = TRUE, imput.type = "wright", outfile = "012")
+
+Mwrth <- geno.ready2$M.clean
+
+Mwrth[1:10,1:5]
+```
+
+## G matrix
+
+```{r}
+G <- G.matrix(M = Mwrth, method = "VanRaden", format = "wide") 
+
+Ga <- G$Ga
+
+Ga[1:5,1:5]
+```
+
