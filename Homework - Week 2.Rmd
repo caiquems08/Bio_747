@@ -17,7 +17,8 @@ Atividade: i) Compute the prevalence types of SNP, ii) Compute the genomic relat
 library(data.table)
 library(dplyr)
 library(questionr)
-library(AGHmatrix)
+library(snpReady)
+
 ```
 
 # Carregando dados
@@ -37,7 +38,20 @@ Pop_CFD01 <- data %>%
   select(starts_with("CFD01")) %>% 
   select(ends_with("Alleles"))
 
-head(Pop_CFD01)[,1:3]
+Pop_CFD01$ID_REF = data[,1];
+
+Pop_CFD01 = Pop_CFD01 %>% select(ID_REF,everything()) # Inserindo coluna com nomes dos marcadores
+
+Pop_CFD01 <- data.frame(Pop_CFD01, row.names = "ID_REF") # Nomeando as linhas com os nomes dos marcadores
+
+Pop_CFD01 <- Pop_CFD01[,-1] # Excluindo coluna com nomes dos marcadores
+
+Pop_CFD01 <- as.data.frame(apply(Pop_CFD01, 2, function(x) {x[x=="--"] <- NA ; x})) # Substituindo -- por NA
+
+head(Pop_CFD01)[,1:5]
+
+
+
 ```
 
 # Computando SNPs prevalescentes
@@ -61,60 +75,46 @@ TT
 ```
 Há uma prevalescência das bases Adenina e Guanina. Logo, o SNP prevalescente é A/G
 
-# Codificando os SNPs
+# Matriz de relacionamento genômico
+
+Antes de obter a matriz G, é necessária realizar alguns procedimentos de controle dequalidade no conjunto de dados original:
+
+## Leitura e filtragem dos dados 
+```{r}
+head(Pop_CFD01)[,1:5]
+
+transp_Pop_CFD01 <- t(Pop_CFD01) # A transposição é necessária pois é deste modo que a função `raw.data()` do pacote snpReady lê o arquivo de dados (marcadores nas colunas e genótipos nas linhas)
+
+head(transp_Pop_CFD01)[,1:3]
+
+geno.ready <- raw.data(data = as.matrix(transp_Pop_CFD01), frame = "wide", base = TRUE, sweep.sample = 0.5, call.rate = 0.95, maf = 0.10, imput = FALSE)
+
+M <- geno.ready$M.clean
+
+M[1:10,1:5]
+
+geno.ready$report
+
+```
+O arquivo M trata-se de um novo arquivo obtido após a utilização de alguns parâmetros de controle de qualidade, tais como: "call rate" = 0.95, o que significa que só foram aceitos marcadores com no máximo 5% de missing data (10987 marcadores foram removidos); e MAF = 0.1, ou seja, marcadores com frequência do alelo menos frequente igual a 0.1 foram removidos (39279 marcadores removidos).
+
+## Imputação
 
 ```{r}
+geno.ready2 <- raw.data(data = as.matrix(transp_Pop_CFD01), frame = "wide", base = TRUE, sweep.sample = 0.5, call.rate = 0.95, maf = 0.10, imput = TRUE, imput.type = "wright", outfile = "012")
 
-Pop_CFD01 <- as.data.frame(apply(Pop_CFD01, 2, function(x) {x[x=="--"] <- NA ; x})) # Substituindo -- por NA
+Mwrth <- geno.ready2$M.clean
 
-freq_SNPs <- apply(Pop_CFD01, 1, freq) # Lista com aas frequeências dos SNPs
-
-maior_freq <- matrix (NA, nrow(Pop_CFD01), 1) # Criando objeto vazio para guardar a saída do loop
-
-for (i in 1:nrow(Pop_CFD01)){
-  maior_freq[i,] <- row.names(freq_SNPs[[i]][order(freq_SNPs[[i]]$n,
-                                                   decreasing = TRUE),])[1]
-}
-
-SNPs_code <- apply(Pop_CFD01, 2, function (x) {x[x == maior_freq] <- "2" ; x}) # Codificando os alelos mais frequentes
-
-SNPs_code <- apply(SNPs_code, 2, function (x) {x[!(x %in% c(2,NA))] <- "0"; x}) # Codificando os alelos menos frequentes
-
-head(SNPs_code)[,1:3]
-
+Mwrth[1:10,1:5]
 ```
 
-# MAF
-
-```{r message=FALSE}
-maf <- matrix(NA, nrow(SNPs_code), 1) # Objeto vazio para guardar a saída do loop
-
-for (i in 1:nrow(SNPs_code)){
-  freq <- table(SNPs_code[i,])
-       maf[i,]<-min(freq)/sum(freq)
-}
-
-min(maf) #frequência do alelo menos frequente
-
-```
-
-# Dados perdidos
+## G matrix
 
 ```{r}
-freq(SNPs_code)
+G <- G.matrix(M = Mwrth, method = "VanRaden", format = "wide") 
+
+Ga <- G$Ga
+
+Ga[1:5,1:5]
 ```
-A proporção de dados perdidos (NA) é 15.5% 
-
-# Matriz de Relacionamento Genômico
-
-```{r}
-SNPs_code <- apply(SNPs_code, 1, as.numeric)
-
-gr_matrix <- Gmatrix(SNPs_code, method="VanRaden", missingValue = NA, maf=0.01, thresh.missing = 0.1) # A matriz de relacionamento genômico foi computada considerando uma frequência do alelo menos frequente (MAF) igual a 0.01 e uma proporção de dados perdidos igual a 10%
-
-head(gr_matrix)[,1:5]
-
-
-```
-
 
